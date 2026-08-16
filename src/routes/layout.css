@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-strava: #fc4c02;
+  --color-strava-hover: #e03e00;
+  --color-strava-dark: #b83300;
+  --color-surface-bg: #09090b;
+  --color-surface-card: #121216;
+  --color-surface-elevated: #1a1a20;
+  --color-surface-border: #27272f;
+}
+
+@layer base {
+  html, body {
+    background-color: #09090b;
+    color: #f4f4f5;
+    overscroll-behavior-y: contain;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Custom range sliders */
+  input[type="range"] {
+    appearance: none;
+    background: #27272f;
+    height: 6px;
+    border-radius: 9999px;
+    outline: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fc4c02;
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(252, 76, 2, 0.4);
+    border: 2px solid #ffffff;
+    transition: transform 0.1s ease;
+  }
+
+  input[type="range"]::-webkit-slider-thumb:active {
+    transform: scale(1.2);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fc4c02;
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(252, 76, 2, 0.4);
+    border: 2px solid #ffffff;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272f;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
