@@ -1,0 +1,10 @@
+node_modules
+.svelte-kit
+build
+dist
+package-lock.json
+pnpm-lock.yaml
+static/icon-*.png
+static/favicon.*
+infra/.terraform
+infra/terraform.tfstate*

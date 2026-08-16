@@ -1,0 +1,7 @@
+cloudflare_api_token = "YOUR_CLOUDFLARE_API_TOKEN"
+cloudflare_account_id = "YOUR_CLOUDFLARE_ACCOUNT_ID"
+cloudflare_zone_id    = "YOUR_CLOUDFLARE_ZONE_ID"
+domain                = "overlay.example.com"
+github_owner          = "YOUR_GITHUB_USERNAME"
+github_repo           = "Merge"
+project_name          = "ride-stat-overlay"

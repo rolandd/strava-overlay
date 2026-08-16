@@ -11,7 +11,8 @@
 }
 
 @layer base {
-  html, body {
+  html,
+  body {
     background-color: #09090b;
     color: #f4f4f5;
     overscroll-behavior-y: contain;
@@ -21,7 +22,7 @@
   }
 
   /* Custom range sliders */
-  input[type="range"] {
+  input[type='range'] {
     appearance: none;
     background: #27272f;
     height: 6px;
@@ -29,7 +30,7 @@
     outline: none;
   }
 
-  input[type="range"]::-webkit-slider-thumb {
+  input[type='range']::-webkit-slider-thumb {
     appearance: none;
     width: 18px;
     height: 18px;
@@ -41,11 +42,11 @@
     transition: transform 0.1s ease;
   }
 
-  input[type="range"]::-webkit-slider-thumb:active {
+  input[type='range']::-webkit-slider-thumb:active {
     transform: scale(1.2);
   }
 
-  input[type="range"]::-moz-range-thumb {
+  input[type='range']::-moz-range-thumb {
     width: 18px;
     height: 18px;
     border-radius: 50%;
