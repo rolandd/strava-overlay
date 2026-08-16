@@ -2,7 +2,6 @@
   import { onMount, onDestroy } from 'svelte';
   import Header from '$lib/components/Header.svelte';
   import InputSlots from '$lib/components/InputSlots.svelte';
-  import PresetsBar from '$lib/components/PresetsBar.svelte';
   import Workspace from '$lib/components/Workspace.svelte';
   import AdjustmentsPanel from '$lib/components/AdjustmentsPanel.svelte';
   import ExportBar from '$lib/components/ExportBar.svelte';
@@ -72,7 +71,12 @@
   let canInstall = $state<boolean>(false);
   let deferredInstallPrompt = $state<BeforeInstallPromptEvent | null>(null);
   let isHelpOpen = $state<boolean>(false);
+  let isFineTuningOpen = $state<boolean>(false);
+  let isRotatedView = $state<boolean>(false);
   let toasts = $state<ToastMessage[]>([]);
+
+  let hasBoth = $derived(!!baseItem && !!overlayItem);
+  let isLandscape = $derived(baseItem ? baseItem.aspectRatio > 1.15 : false);
 
   function showToast(
     text: string,
@@ -89,6 +93,29 @@
   function dismissToast(id: string) {
     toasts = toasts.filter((t) => t.id !== id);
   }
+
+  // Adaptive Orientation Lock when in Standalone PWA
+  $effect(() => {
+    if (typeof window !== 'undefined' && 'screen' in window && 'orientation' in window.screen) {
+      const orientation = window.screen.orientation;
+      if (hasBoth && isLandscape && typeof orientation.lock === 'function') {
+        orientation.lock('landscape').catch(() => {
+          // Ignore if browser policy disallows locking
+        });
+      }
+    }
+  });
+
+  // Automatically enable rotated view on portrait mobile screens when a landscape image is loaded
+  $effect(() => {
+    if (baseItem && isLandscape && typeof window !== 'undefined') {
+      const isPortraitScreen = window.innerHeight > window.innerWidth;
+      if (isPortraitScreen) {
+        // Auto-enable rotated view for maximum screen filling
+        isRotatedView = true;
+      }
+    }
+  });
 
   // Initialize PWA, Service Worker, and Ingestion on Mount
   onMount(async () => {
@@ -241,6 +268,7 @@
   function handleRemoveBase() {
     revokeImageItem(baseItem);
     baseItem = null;
+    isRotatedView = false;
   }
 
   function handleRemoveOverlay() {
@@ -264,6 +292,8 @@
     revokeImageItem(overlayItem);
     baseItem = null;
     overlayItem = null;
+    isFineTuningOpen = false;
+    isRotatedView = false;
     resetOverlayTransform();
     adjustments = {
       brightness: 1.0,
@@ -271,6 +301,12 @@
       saturation: 1.0,
       cropAspectRatio: 'original'
     };
+    if (typeof window !== 'undefined' && 'screen' in window && 'orientation' in window.screen) {
+      const orientation = window.screen.orientation;
+      if (typeof orientation.unlock === 'function') {
+        orientation.unlock();
+      }
+    }
     showToast('Workspace cleared', 'info');
   }
 
@@ -337,68 +373,202 @@
   }
 </script>
 
-<div class="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col justify-between">
+<div class="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col">
   <ToastContainer {toasts} onDismiss={dismissToast} />
   <HelpModal isOpen={isHelpOpen} onClose={() => (isHelpOpen = false)} />
 
-  <!-- Top App Header -->
-  <Header
-    {isOnline}
-    {canInstall}
-    onInstall={handleInstallPwa}
-    onOpenHelp={() => (isHelpOpen = true)}
-  />
-
-  <!-- Main Interactive Studio Area -->
-  <main class="flex-1 flex flex-col justify-center py-2">
-    <!-- Image Slot Ingestion Bar -->
-    <InputSlots
-      {baseItem}
-      {overlayItem}
-      onSelectBase={handleSelectBase}
-      onSelectOverlay={handleSelectOverlay}
-      onRemoveBase={handleRemoveBase}
-      onRemoveOverlay={handleRemoveOverlay}
-      onSwapSlots={handleSwapSlots}
+  <!-- DESKTOP STUDIO VIEW (lg+) -->
+  <div class="hidden lg:flex flex-col h-screen overflow-hidden">
+    <Header
+      {isOnline}
+      {canInstall}
+      onInstall={handleInstallPwa}
+      onOpenHelp={() => (isHelpOpen = true)}
     />
 
-    <!-- Quick Snap Presets (Active when both loaded) -->
-    {#if baseItem && overlayItem}
-      <PresetsBar disabled={!overlayItem} onSelectPreset={handleSelectPreset} />
+    <div class="flex-1 flex min-h-0 overflow-hidden">
+      <!-- Dominant Center Stage Canvas -->
+      <main
+        class="flex-1 h-full flex flex-col items-center justify-center p-6 min-w-0 bg-[#09090b] relative"
+      >
+        <Workspace
+          {baseItem}
+          {overlayItem}
+          {transform}
+          {adjustments}
+          onUpdateTransform={updateTransform}
+          onDropFiles={processFilesList}
+          onDimensionsChange={(dims) => (viewportDims = dims)}
+        />
+      </main>
+
+      <!-- Persistent Right Inspector Sidebar -->
+      <aside
+        class="w-96 h-full flex flex-col bg-[#0f0f13] border-l border-[#27272f] overflow-y-auto p-4 gap-4 shrink-0"
+      >
+        <!-- Layer Slot Manager -->
+        <InputSlots
+          {baseItem}
+          {overlayItem}
+          variant="sidebar"
+          onSelectBase={handleSelectBase}
+          onSelectOverlay={handleSelectOverlay}
+          onRemoveBase={handleRemoveBase}
+          onRemoveOverlay={handleRemoveOverlay}
+          onSwapSlots={handleSwapSlots}
+        />
+
+        <!-- Fine-Tuning Inspector with Tabs -->
+        <div class="flex-1">
+          <AdjustmentsPanel
+            {transform}
+            {adjustments}
+            {exportOptions}
+            hasBase={!!baseItem}
+            hasOverlay={!!overlayItem}
+            mode="sidebar"
+            onSelectPreset={handleSelectPreset}
+            onUpdateTransform={updateTransform}
+            onUpdateAdjustments={updateAdjustments}
+            onUpdateExportOptions={updateExportOptions}
+          />
+        </div>
+
+        <!-- Docked Export CTA at Base of Sidebar -->
+        <ExportBar
+          {isRendering}
+          hasBothImages={hasBoth}
+          mode="sidebar"
+          onExport={() => handleExportComposite(false)}
+          onDownloadDirect={() => handleExportComposite(true)}
+          onClearAll={handleClearAll}
+        />
+      </aside>
+    </div>
+  </div>
+
+  <!-- MOBILE VIEW (< lg) -->
+  <div class="lg:hidden flex-1 flex flex-col">
+    {#if hasBoth}
+      <!-- MOBILE MODE B: Full-Bleed Immersive Studio -->
+      <div class="h-[100dvh] w-full overflow-hidden relative flex flex-col justify-between">
+        <!-- Floating Top Minimal HUD Capsule -->
+        <div
+          class="absolute top-0 inset-x-0 pt-safe px-3 py-2 z-30 flex items-center justify-between pointer-events-none"
+        >
+          <div class="pointer-events-auto">
+            <InputSlots
+              {baseItem}
+              {overlayItem}
+              variant="compact"
+              onSelectBase={handleSelectBase}
+              onSelectOverlay={handleSelectOverlay}
+              onRemoveBase={handleRemoveBase}
+              onRemoveOverlay={handleRemoveOverlay}
+              onSwapSlots={handleSwapSlots}
+            />
+          </div>
+
+          <div class="pointer-events-auto">
+            <Header
+              isCompact={true}
+              {isOnline}
+              {canInstall}
+              onInstall={handleInstallPwa}
+              onOpenHelp={() => (isHelpOpen = true)}
+            />
+          </div>
+        </div>
+
+        <!-- Full-Screen Interactive Workspace Canvas -->
+        <main
+          class="flex-1 w-full h-full min-h-0 flex items-center justify-center p-1 sm:p-2 pt-14 pb-20"
+        >
+          <Workspace
+            {baseItem}
+            {overlayItem}
+            {transform}
+            {adjustments}
+            {isRotatedView}
+            onToggleRotatedView={() => (isRotatedView = !isRotatedView)}
+            onUpdateTransform={updateTransform}
+            onDropFiles={processFilesList}
+            onDimensionsChange={(dims) => (viewportDims = dims)}
+          />
+        </main>
+
+        <!-- Floating Bottom 1-Click Action Dock -->
+        <ExportBar
+          {isRendering}
+          hasBothImages={hasBoth}
+          mode="floating"
+          {isFineTuningOpen}
+          onToggleFineTuning={() => (isFineTuningOpen = !isFineTuningOpen)}
+          onExport={() => handleExportComposite(false)}
+          onDownloadDirect={() => handleExportComposite(true)}
+          onClearAll={handleClearAll}
+        />
+
+        <!-- Slide-Up Bottom Sheet Drawer for Fine-Tuning -->
+        <AdjustmentsPanel
+          {transform}
+          {adjustments}
+          {exportOptions}
+          hasBase={!!baseItem}
+          hasOverlay={!!overlayItem}
+          mode="drawer"
+          isOpen={isFineTuningOpen}
+          onClose={() => (isFineTuningOpen = false)}
+          onSelectPreset={handleSelectPreset}
+          onUpdateTransform={updateTransform}
+          onUpdateAdjustments={updateAdjustments}
+          onUpdateExportOptions={updateExportOptions}
+        />
+      </div>
+    {:else}
+      <!-- MOBILE MODE A: Ingestion Onboarding Mode (Missing one or both images) -->
+      <div class="min-h-screen flex flex-col justify-between">
+        <Header
+          {isOnline}
+          {canInstall}
+          onInstall={handleInstallPwa}
+          onOpenHelp={() => (isHelpOpen = true)}
+        />
+
+        <main class="flex-1 flex flex-col justify-center py-4 space-y-4">
+          <InputSlots
+            {baseItem}
+            {overlayItem}
+            variant="cards"
+            onSelectBase={handleSelectBase}
+            onSelectOverlay={handleSelectOverlay}
+            onRemoveBase={handleRemoveBase}
+            onRemoveOverlay={handleRemoveOverlay}
+            onSwapSlots={handleSwapSlots}
+          />
+
+          <div class="flex-1 flex items-center justify-center min-h-[280px]">
+            <Workspace
+              {baseItem}
+              {overlayItem}
+              {transform}
+              {adjustments}
+              onUpdateTransform={updateTransform}
+              onDropFiles={processFilesList}
+              onDimensionsChange={(dims) => (viewportDims = dims)}
+            />
+          </div>
+        </main>
+
+        <ExportBar
+          {isRendering}
+          hasBothImages={hasBoth}
+          mode="inline"
+          onExport={() => handleExportComposite(false)}
+          onDownloadDirect={() => handleExportComposite(true)}
+          onClearAll={handleClearAll}
+        />
+      </div>
     {/if}
-
-    <!-- Interactive Viewport Workspace -->
-    <Workspace
-      {baseItem}
-      {overlayItem}
-      {transform}
-      {adjustments}
-      onUpdateTransform={updateTransform}
-      onDropFiles={processFilesList}
-      onDimensionsChange={(dims) => (viewportDims = dims)}
-    />
-
-    <!-- Fine-Tuning Adjustments Drawer -->
-    {#if baseItem || overlayItem}
-      <AdjustmentsPanel
-        {transform}
-        {adjustments}
-        {exportOptions}
-        hasBase={!!baseItem}
-        hasOverlay={!!overlayItem}
-        onUpdateTransform={updateTransform}
-        onUpdateAdjustments={updateAdjustments}
-        onUpdateExportOptions={updateExportOptions}
-      />
-    {/if}
-  </main>
-
-  <!-- Bottom Action / Export Bar -->
-  <ExportBar
-    {isRendering}
-    hasBothImages={!!baseItem && !!overlayItem}
-    onExport={() => handleExportComposite(false)}
-    onDownloadDirect={() => handleExportComposite(true)}
-    onClearAll={handleClearAll}
-  />
+  </div>
 </div>

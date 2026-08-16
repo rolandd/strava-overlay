@@ -4,6 +4,7 @@ export interface GestureOptions {
   getTransform: () => OverlayTransform;
   onUpdate: (transform: Partial<OverlayTransform>) => void;
   disabled?: boolean;
+  viewRotationAngle?: number;
 }
 
 export function gestureHandler(node: HTMLElement, options: GestureOptions) {
@@ -55,9 +56,18 @@ export function gestureHandler(node: HTMLElement, options: GestureOptions) {
 
     if (activePointers.size === 1) {
       // Single finger/pointer drag
-      const dx = currentPos.x - prevPos.x;
-      const dy = currentPos.y - prevPos.y;
+      let dx = currentPos.x - prevPos.x;
+      let dy = currentPos.y - prevPos.y;
       activePointers.set(e.pointerId, currentPos);
+
+      const rot = currentOptions.viewRotationAngle || 0;
+      if (rot !== 0) {
+        const rad = (-rot * Math.PI) / 180;
+        const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
+        const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+        dx = rx;
+        dy = ry;
+      }
 
       currentOptions.onUpdate({
         x: transform.x + dx,
