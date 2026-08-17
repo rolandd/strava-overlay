@@ -68,7 +68,8 @@ self.addEventListener('fetch', (event) => {
                 if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) mimeType = 'image/jpeg';
                 else if (lower.endsWith('.png')) mimeType = 'image/png';
                 else if (lower.endsWith('.webp')) mimeType = 'image/webp';
-                else if (lower.endsWith('.heic') || lower.endsWith('.heif')) mimeType = 'image/heic';
+                else if (lower.endsWith('.heic') || lower.endsWith('.heif'))
+                  mimeType = 'image/heic';
                 else if (lower.endsWith('.svg')) mimeType = 'image/svg+xml';
                 else mimeType = 'image/jpeg';
               }

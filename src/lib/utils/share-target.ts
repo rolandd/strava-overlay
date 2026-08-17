@@ -91,7 +91,8 @@ export async function retrievePendingSharedFiles(): Promise<File[] | null> {
         const blob = await res.blob();
         const fileNameHeader = res.headers.get('x-file-name');
         const name = fileNameHeader ? decodeURIComponent(fileNameHeader) : `shared-${i}.png`;
-        const contentType = res.headers.get('content-type') || blob.type || getMimeTypeFromName(name);
+        const contentType =
+          res.headers.get('content-type') || blob.type || getMimeTypeFromName(name);
         const file = new File([blob], name, { type: contentType });
         files.push(file);
       }

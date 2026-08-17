@@ -244,7 +244,11 @@ export async function fileToImageItem(
   }
 }
 
-export async function blobToImageItem(blob: Blob, name: string, explicitType?: string): Promise<ImageItem> {
+export async function blobToImageItem(
+  blob: Blob,
+  name: string,
+  explicitType?: string
+): Promise<ImageItem> {
   const mimeType = explicitType || blob.type || getMimeTypeFromName(name);
   const file = new File([blob], name, { type: mimeType });
   return fileToImageItem(file, name);

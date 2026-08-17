@@ -105,9 +105,7 @@ async function executeSaveSessionState(params: {
             blob,
             name: params.baseItem.name,
             type:
-              params.baseItem.file?.type ||
-              blob.type ||
-              getMimeTypeFromName(params.baseItem.name),
+              params.baseItem.file?.type || blob.type || getMimeTypeFromName(params.baseItem.name),
             isTransparent: !!params.baseItem.isTransparent
           };
         }
