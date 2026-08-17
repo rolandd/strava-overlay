@@ -69,7 +69,7 @@ resource "cloudflare_record" "pages_cname" {
   count   = var.cloudflare_zone_id != "" && var.domain != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
   name    = var.domain
-  value   = "${cloudflare_pages_project.pwa.name}.pages.dev"
+  content = "${cloudflare_pages_project.pwa.name}.pages.dev"
   type    = "CNAME"
   proxied = true
   ttl     = 1
