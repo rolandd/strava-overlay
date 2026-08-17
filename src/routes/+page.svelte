@@ -19,14 +19,14 @@
   import {
     extractImagesFromClipboard,
     fileToImageItem,
-    isTransparentImage,
     revokeImageItem
   } from '$lib/utils/image-loader';
   import { computePresetTransform, type ViewportDimensions } from '$lib/utils/presets';
   import { renderHighResComposite } from '$lib/utils/canvas-compositor';
   import {
-    checkAndRetrieveSharedFiles,
+    determineSlotAssignment,
     downloadBlob,
+    retrievePendingSharedFiles,
     shareOrDownloadBlob
   } from '$lib/utils/share-target';
   import { clearSessionState, loadSessionState, saveSessionState } from '$lib/utils/session-store';
@@ -123,6 +123,49 @@
     }
   });
 
+  async function checkAndIngestPendingShares() {
+    try {
+      const pendingFiles = await retrievePendingSharedFiles();
+      if (!pendingFiles || pendingFiles.length === 0) return;
+
+      const assignment = determineSlotAssignment(pendingFiles, !!baseItem, !!overlayItem);
+
+      if (assignment.baseFile) {
+        revokeImageItem(baseItem);
+        baseItem = await fileToImageItem(assignment.baseFile);
+      }
+
+      if (assignment.overlayFile) {
+        revokeImageItem(overlayItem);
+        overlayItem = await fileToImageItem(assignment.overlayFile);
+        resetOverlayTransform();
+      }
+
+      syncSession();
+
+      if (assignment.baseFile && assignment.overlayFile) {
+        showToast('Imported photo and overlay from share target!', 'success');
+      } else if (assignment.overlayFile) {
+        showToast('Imported overlay graphic from share target!', 'success');
+      } else if (assignment.baseFile) {
+        showToast('Imported base photo from share target!', 'success');
+      }
+    } catch (err) {
+      console.error('Failed to ingest share:', err);
+      showToast('Could not process shared image.', 'error');
+    } finally {
+      if (typeof window !== 'undefined' && window.location.search.includes('incoming_share')) {
+        window.history.replaceState({}, '', '/');
+      }
+    }
+  }
+
+  function handleVisibilityChange() {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      checkAndIngestPendingShares();
+    }
+  }
+
   // Initialize PWA, Service Worker, and Ingestion on Mount
   onMount(async () => {
     if (typeof window !== 'undefined') {
@@ -155,6 +198,11 @@
       // Clipboard paste listener
       window.addEventListener('paste', handleWindowPaste);
 
+      // App resume & visibility change listeners (for returning from share actions)
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('pageshow', handleVisibilityChange);
+      window.addEventListener('focus', handleVisibilityChange);
+
       // 1. Restore persisted session from IndexedDB first
       try {
         const savedSession = await loadSessionState();
@@ -168,37 +216,17 @@
         console.warn('Could not restore previous session:', e);
       }
 
-      // 2. Ingest Android Share Target files if redirected with query
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.has('incoming_share')) {
-        try {
-          const sharedResult = await checkAndRetrieveSharedFiles();
-          if (sharedResult) {
-            if (sharedResult.baseItem) {
-              revokeImageItem(baseItem);
-              baseItem = sharedResult.baseItem;
-            }
-            if (sharedResult.overlayItem) {
-              revokeImageItem(overlayItem);
-              overlayItem = sharedResult.overlayItem;
-              resetOverlayTransform();
-            }
-            syncSession();
-            showToast('Imported photo from system share target!', 'success');
-          }
-        } catch (err) {
-          console.error('Failed to ingest share:', err);
-          showToast('Could not process shared image.', 'error');
-        } finally {
-          window.history.replaceState({}, '', '/');
-        }
-      }
+      // 2. Ingest Android Share Target files (if any are pending in SW cache or URL)
+      await checkAndIngestPendingShares();
     }
   });
 
   onDestroy(() => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('paste', handleWindowPaste);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
     }
     revokeImageItem(baseItem);
     revokeImageItem(overlayItem);
@@ -227,39 +255,29 @@
 
   async function processFilesList(files: File[]) {
     try {
-      if (files.length === 1) {
-        const f = files[0];
-        if (isTransparentImage(f) && baseItem) {
-          revokeImageItem(overlayItem);
-          overlayItem = await fileToImageItem(f);
-          resetOverlayTransform();
-          syncSession();
-          showToast('Overlay graphic loaded', 'success');
-        } else if (!baseItem) {
-          revokeImageItem(baseItem);
-          baseItem = await fileToImageItem(f);
-          syncSession();
-          showToast('Base photo loaded', 'success');
-        } else {
-          revokeImageItem(overlayItem);
-          overlayItem = await fileToImageItem(f);
-          resetOverlayTransform();
-          syncSession();
-          showToast('Overlay graphic loaded', 'success');
-        }
-      } else if (files.length >= 2) {
-        const transparent = files.find((f) => isTransparentImage(f));
-        const nonTransparent = files.find((f) => !isTransparentImage(f)) || files[0];
-        const overlayFile = transparent || files[1];
+      if (files.length === 0) return;
 
+      const assignment = determineSlotAssignment(files, !!baseItem, !!overlayItem);
+
+      if (assignment.baseFile) {
         revokeImageItem(baseItem);
-        revokeImageItem(overlayItem);
+        baseItem = await fileToImageItem(assignment.baseFile);
+      }
 
-        baseItem = await fileToImageItem(nonTransparent);
-        overlayItem = await fileToImageItem(overlayFile);
+      if (assignment.overlayFile) {
+        revokeImageItem(overlayItem);
+        overlayItem = await fileToImageItem(assignment.overlayFile);
         resetOverlayTransform();
-        syncSession();
+      }
+
+      syncSession();
+
+      if (assignment.baseFile && assignment.overlayFile) {
         showToast('Loaded base photo and overlay graphic', 'success');
+      } else if (assignment.overlayFile) {
+        showToast('Overlay graphic loaded', 'success');
+      } else if (assignment.baseFile) {
+        showToast('Base photo loaded', 'success');
       }
     } catch (err) {
       console.error('Error reading files:', err);

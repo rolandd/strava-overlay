@@ -62,7 +62,17 @@ self.addEventListener('fetch', (event) => {
             for (let i = 0; i < filesList.length; i++) {
               const file = filesList[i];
               const headers = new Headers();
-              headers.set('content-type', file.type || 'image/png');
+              let mimeType = file.type;
+              if (!mimeType) {
+                const lower = (file.name || '').toLowerCase();
+                if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) mimeType = 'image/jpeg';
+                else if (lower.endsWith('.png')) mimeType = 'image/png';
+                else if (lower.endsWith('.webp')) mimeType = 'image/webp';
+                else if (lower.endsWith('.heic') || lower.endsWith('.heif')) mimeType = 'image/heic';
+                else if (lower.endsWith('.svg')) mimeType = 'image/svg+xml';
+                else mimeType = 'image/jpeg';
+              }
+              headers.set('content-type', mimeType);
               headers.set('x-file-name', encodeURIComponent(file.name || `shared-${i}`));
 
               await cache.put(`/shared-file-${i}`, new Response(file, { headers }));

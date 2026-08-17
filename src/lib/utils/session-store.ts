@@ -1,5 +1,5 @@
 import type { BaseImageAdjustments, ImageItem, OverlayTransform } from '../types';
-import { blobToImageItem } from './image-loader';
+import { blobToImageItem, getMimeTypeFromName } from './image-loader';
 
 const DB_NAME = 'ride_overlay_session_db';
 const DB_VERSION = 1;
@@ -8,6 +8,7 @@ const STORE_NAME = 'active_session';
 interface PersistedImageRecord {
   blob: Blob;
   name: string;
+  type?: string;
   isTransparent: boolean;
 }
 
@@ -59,7 +60,25 @@ async function extractBlobFromItem(item: ImageItem): Promise<Blob | null> {
   return null;
 }
 
-export async function saveSessionState(params: {
+let pendingSavePromise: Promise<void> = Promise.resolve();
+
+export function saveSessionState(params: {
+  baseItem?: ImageItem | null;
+  overlayItem?: ImageItem | null;
+  transform?: OverlayTransform;
+  adjustments?: BaseImageAdjustments;
+}): Promise<void> {
+  // Chain saves to avoid concurrent transaction collisions
+  pendingSavePromise = pendingSavePromise
+    .then(() => executeSaveSessionState(params))
+    .catch((err) => {
+      console.warn('Session save queue encountered an error:', err);
+    });
+
+  return pendingSavePromise;
+}
+
+async function executeSaveSessionState(params: {
   baseItem?: ImageItem | null;
   overlayItem?: ImageItem | null;
   transform?: OverlayTransform;
@@ -85,6 +104,10 @@ export async function saveSessionState(params: {
           baseRecord = {
             blob,
             name: params.baseItem.name,
+            type:
+              params.baseItem.file?.type ||
+              blob.type ||
+              getMimeTypeFromName(params.baseItem.name),
             isTransparent: !!params.baseItem.isTransparent
           };
         }
@@ -101,6 +124,10 @@ export async function saveSessionState(params: {
           overlayRecord = {
             blob,
             name: params.overlayItem.name,
+            type:
+              params.overlayItem.file?.type ||
+              blob.type ||
+              getMimeTypeFromName(params.overlayItem.name),
             isTransparent: !!params.overlayItem.isTransparent
           };
         }
@@ -153,7 +180,11 @@ export async function loadSessionState(): Promise<{
 
     if (record.baseImage?.blob) {
       try {
-        restoredBase = await blobToImageItem(record.baseImage.blob, record.baseImage.name);
+        restoredBase = await blobToImageItem(
+          record.baseImage.blob,
+          record.baseImage.name,
+          record.baseImage.type
+        );
       } catch (e) {
         console.warn('Failed to restore base photo from persisted session:', e);
       }
@@ -161,7 +192,11 @@ export async function loadSessionState(): Promise<{
 
     if (record.overlayImage?.blob) {
       try {
-        restoredOverlay = await blobToImageItem(record.overlayImage.blob, record.overlayImage.name);
+        restoredOverlay = await blobToImageItem(
+          record.overlayImage.blob,
+          record.overlayImage.name,
+          record.overlayImage.type
+        );
       } catch (e) {
         console.warn('Failed to restore overlay graphic from persisted session:', e);
       }

@@ -1,16 +1,46 @@
 import type { ImageItem } from '../types';
 
+export function getMimeTypeFromName(name: string): string {
+  const lower = (name || '').toLowerCase();
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.svg')) return 'image/svg+xml';
+  if (lower.endsWith('.heic')) return 'image/heic';
+  if (lower.endsWith('.heif')) return 'image/heif';
+  if (lower.endsWith('.avif')) return 'image/avif';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  return 'image/jpeg';
+}
+
 export function isTransparentImage(file: File | Blob, filename?: string): boolean {
   const name = filename || (file instanceof File ? file.name : '');
   const type = file.type || '';
+  const lower = (name || '').toLowerCase();
+
+  // JPEGs and HEICs are never transparent
+  if (
+    type === 'image/jpeg' ||
+    type === 'image/jpg' ||
+    type === 'image/heic' ||
+    type === 'image/heif' ||
+    type === 'image/avif' ||
+    lower.endsWith('.jpg') ||
+    lower.endsWith('.jpeg') ||
+    lower.endsWith('.heic') ||
+    lower.endsWith('.heif') ||
+    lower.endsWith('.avif')
+  ) {
+    return false;
+  }
 
   return (
     type === 'image/png' ||
     type === 'image/webp' ||
     type === 'image/svg+xml' ||
-    name.toLowerCase().endsWith('.png') ||
-    name.toLowerCase().endsWith('.webp') ||
-    name.toLowerCase().endsWith('.svg')
+    lower.endsWith('.png') ||
+    lower.endsWith('.webp') ||
+    lower.endsWith('.svg')
   );
 }
 
@@ -214,8 +244,9 @@ export async function fileToImageItem(
   }
 }
 
-export async function blobToImageItem(blob: Blob, name: string): Promise<ImageItem> {
-  const file = new File([blob], name, { type: blob.type || 'image/png' });
+export async function blobToImageItem(blob: Blob, name: string, explicitType?: string): Promise<ImageItem> {
+  const mimeType = explicitType || blob.type || getMimeTypeFromName(name);
+  const file = new File([blob], name, { type: mimeType });
   return fileToImageItem(file, name);
 }
 

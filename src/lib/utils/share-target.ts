@@ -1,4 +1,4 @@
-import { blobToImageItem } from './image-loader';
+import { getMimeTypeFromName, isTransparentImage } from './image-loader';
 import type { ImageItem } from '../types';
 
 export interface PendingSharesResult {
@@ -6,7 +6,72 @@ export interface PendingSharesResult {
   overlayItem?: ImageItem;
 }
 
-export async function checkAndRetrieveSharedFiles(): Promise<PendingSharesResult | null> {
+export interface SlotAssignment {
+  baseFile?: File;
+  overlayFile?: File;
+}
+
+/**
+ * Smartly determines which layer slot(s) incoming files should populate based on
+ * current workspace occupancy and image transparency.
+ */
+export function determineSlotAssignment(
+  incomingFiles: File[],
+  hasBase: boolean,
+  hasOverlay: boolean
+): SlotAssignment {
+  if (incomingFiles.length === 0) return {};
+
+  if (incomingFiles.length === 1) {
+    const file = incomingFiles[0];
+    const isTrans = isTransparentImage(file);
+
+    // If Base photo is present and Overlay slot is empty -> populate Overlay!
+    if (hasBase && !hasOverlay) {
+      return { overlayFile: file };
+    }
+
+    // If Overlay is present and Base photo slot is empty -> populate Base!
+    if (!hasBase && hasOverlay) {
+      return { baseFile: file };
+    }
+
+    // If both slots already have images
+    if (hasBase && hasOverlay) {
+      if (isTrans) {
+        return { overlayFile: file };
+      } else {
+        return { baseFile: file };
+      }
+    }
+
+    // If neither slot has an image
+    if (isTrans) {
+      return { overlayFile: file };
+    } else {
+      return { baseFile: file };
+    }
+  }
+
+  // 2 or more files shared simultaneously
+  const transIndex = incomingFiles.findIndex((f) => isTransparentImage(f));
+  if (transIndex !== -1) {
+    const overlayFile = incomingFiles[transIndex];
+    const baseFile = incomingFiles.find((_, i) => i !== transIndex) || incomingFiles[0];
+    return { baseFile, overlayFile };
+  } else {
+    // Neither is transparent: first file becomes base photo, second becomes overlay
+    return {
+      baseFile: incomingFiles[0],
+      overlayFile: incomingFiles[1]
+    };
+  }
+}
+
+/**
+ * Checks Service Worker Cache for incoming shared files from Android Web Share Target
+ */
+export async function retrievePendingSharedFiles(): Promise<File[] | null> {
   if (typeof window === 'undefined' || !('caches' in window)) return null;
 
   try {
@@ -18,7 +83,7 @@ export async function checkAndRetrieveSharedFiles(): Promise<PendingSharesResult
     const count: number = meta.count || 0;
     if (count === 0) return null;
 
-    const retrievedItems: ImageItem[] = [];
+    const files: File[] = [];
 
     for (let i = 0; i < count; i++) {
       const res = await cache.match(`/shared-file-${i}`);
@@ -26,8 +91,9 @@ export async function checkAndRetrieveSharedFiles(): Promise<PendingSharesResult
         const blob = await res.blob();
         const fileNameHeader = res.headers.get('x-file-name');
         const name = fileNameHeader ? decodeURIComponent(fileNameHeader) : `shared-${i}.png`;
-        const item = await blobToImageItem(blob, name);
-        retrievedItems.push(item);
+        const contentType = res.headers.get('content-type') || blob.type || getMimeTypeFromName(name);
+        const file = new File([blob], name, { type: contentType });
+        files.push(file);
       }
     }
 
@@ -35,34 +101,7 @@ export async function checkAndRetrieveSharedFiles(): Promise<PendingSharesResult
     const keys = await cache.keys();
     await Promise.all(keys.map((k) => cache.delete(k)));
 
-    if (retrievedItems.length === 0) return null;
-
-    if (retrievedItems.length === 1) {
-      const single = retrievedItems[0];
-      // If transparent PNG, suggest as overlay; otherwise base photo
-      if (single.isTransparent) {
-        return { overlayItem: single };
-      } else {
-        return { baseItem: single };
-      }
-    }
-
-    // If 2 or more files shared at once:
-    // Place transparent image in overlay, non-transparent in base photo
-    const transparentItem = retrievedItems.find((i) => i.isTransparent);
-    const nonTransparentItem = retrievedItems.find((i) => !i.isTransparent);
-
-    if (transparentItem && nonTransparentItem) {
-      return {
-        baseItem: nonTransparentItem,
-        overlayItem: transparentItem
-      };
-    } else {
-      return {
-        baseItem: retrievedItems[0],
-        overlayItem: retrievedItems[1]
-      };
-    }
+    return files.length > 0 ? files : null;
   } catch (err) {
     console.warn('Failed to retrieve shared files from cache:', err);
     return null;
