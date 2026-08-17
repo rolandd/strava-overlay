@@ -1,18 +1,19 @@
 import type { BaseImageAdjustments, ImageItem, OverlayTransform } from '../types';
 import { blobToImageItem, getMimeTypeFromName } from './image-loader';
+import { logger } from './logger';
 
 const DB_NAME = 'ride_overlay_session_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'active_session';
 
-interface PersistedImageRecord {
+export interface PersistedImageRecord {
   blob: Blob;
   name: string;
   type?: string;
   isTransparent: boolean;
 }
 
-interface PersistedSessionRecord {
+export interface PersistedSessionRecord {
   key: string;
   baseImage?: PersistedImageRecord | null;
   overlayImage?: PersistedImageRecord | null;
@@ -72,6 +73,7 @@ export function saveSessionState(params: {
   pendingSavePromise = pendingSavePromise
     .then(() => executeSaveSessionState(params))
     .catch((err) => {
+      logger.error('IDB-SAVE', `Session save queue failed: ${err}`);
       console.warn('Session save queue encountered an error:', err);
     });
 
@@ -149,7 +151,13 @@ async function executeSaveSessionState(params: {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+
+    logger.info(
+      'IDB-SAVE',
+      `Saved: base="${baseRecord ? baseRecord.name : 'none'}", overlay="${overlayRecord ? overlayRecord.name : 'none'}"`
+    );
   } catch (err) {
+    logger.error('IDB-SAVE', `Failed to persist session: ${err}`);
     console.warn('Failed to persist session to IndexedDB:', err);
   }
 }
@@ -171,7 +179,10 @@ export async function loadSessionState(): Promise<{
       req.onerror = () => reject(req.error);
     });
 
-    if (!record) return null;
+    if (!record) {
+      logger.info('IDB-LOAD', 'No existing session in IndexedDB.');
+      return null;
+    }
 
     let restoredBase: ImageItem | null = null;
     let restoredOverlay: ImageItem | null = null;
@@ -183,7 +194,12 @@ export async function loadSessionState(): Promise<{
           record.baseImage.name,
           record.baseImage.type
         );
+        logger.info(
+          'IDB-LOAD',
+          `Restored base photo: "${record.baseImage.name}" (${record.baseImage.type})`
+        );
       } catch (e) {
+        logger.error('IDB-LOAD', `Failed to restore base photo: ${e}`);
         console.warn('Failed to restore base photo from persisted session:', e);
       }
     }
@@ -195,7 +211,12 @@ export async function loadSessionState(): Promise<{
           record.overlayImage.name,
           record.overlayImage.type
         );
+        logger.info(
+          'IDB-LOAD',
+          `Restored overlay graphic: "${record.overlayImage.name}" (${record.overlayImage.type})`
+        );
       } catch (e) {
+        logger.error('IDB-LOAD', `Failed to restore overlay graphic: ${e}`);
         console.warn('Failed to restore overlay graphic from persisted session:', e);
       }
     }
@@ -207,6 +228,7 @@ export async function loadSessionState(): Promise<{
       adjustments: record.adjustments
     };
   } catch (err) {
+    logger.error('IDB-LOAD', `Failed to load session: ${err}`);
     console.warn('Failed to load session from IndexedDB:', err);
     return null;
   }
@@ -223,7 +245,27 @@ export async function clearSessionState(): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+    logger.info('IDB-CLEAR', 'Cleared active session from IndexedDB.');
   } catch (err) {
+    logger.error('IDB-CLEAR', `Failed to clear session: ${err}`);
     console.warn('Failed to clear session state in IndexedDB:', err);
+  }
+}
+
+export async function inspectStoredSession(): Promise<PersistedSessionRecord | null> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+
+    const record = await new Promise<PersistedSessionRecord | undefined>((resolve, reject) => {
+      const req = store.get('current');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+
+    return record || null;
+  } catch {
+    return null;
   }
 }

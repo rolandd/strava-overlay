@@ -6,6 +6,7 @@
   import AdjustmentsPanel from '$lib/components/AdjustmentsPanel.svelte';
   import ExportBar from '$lib/components/ExportBar.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
+  import DiagnosticsModal from '$lib/components/DiagnosticsModal.svelte';
   import ToastContainer from '$lib/components/ToastContainer.svelte';
 
   import type {
@@ -30,6 +31,7 @@
     shareOrDownloadBlob
   } from '$lib/utils/share-target';
   import { clearSessionState, loadSessionState, saveSessionState } from '$lib/utils/session-store';
+  import { logger } from '$lib/utils/logger';
 
   // Reactive Application State
   let baseItem = $state<ImageItem | null>(null);
@@ -72,9 +74,14 @@
   let canInstall = $state<boolean>(false);
   let deferredInstallPrompt = $state<BeforeInstallPromptEvent | null>(null);
   let isHelpOpen = $state<boolean>(false);
+  let isDiagnosticsOpen = $state<boolean>(false);
   let isFineTuningOpen = $state<boolean>(false);
   let isRotatedView = $state<boolean>(false);
   let toasts = $state<ToastMessage[]>([]);
+
+  // Guard flags against lifecycle race conditions
+  let isSessionInitialized = false;
+  let isIngestingShare = false;
 
   let hasBoth = $derived(!!baseItem && !!overlayItem);
   let isLandscape = $derived(baseItem ? baseItem.aspectRatio > 1.15 : false);
@@ -97,6 +104,7 @@
 
   // Persist session to IndexedDB whenever relevant states change
   function syncSession() {
+    if (!isSessionInitialized) return;
     saveSessionState({ baseItem, overlayItem, transform, adjustments });
   }
 
@@ -123,22 +131,50 @@
     }
   });
 
-  async function checkAndIngestPendingShares() {
+  async function checkAndIngestPendingShares(trigger = 'manual') {
+    if (!isSessionInitialized) {
+      logger.debug('SHARE-INGEST', `Skipped (${trigger}): Session not initialized yet`);
+      return;
+    }
+    if (isIngestingShare) {
+      logger.debug('SHARE-INGEST', `Skipped (${trigger}): Ingestion already in progress`);
+      return;
+    }
+
+    isIngestingShare = true;
     try {
+      logger.info(
+        'SHARE-INGEST',
+        `Checking shares (trigger=${trigger}). Current state: hasBase=${!!baseItem}, hasOverlay=${!!overlayItem}`
+      );
       const pendingFiles = await retrievePendingSharedFiles();
-      if (!pendingFiles || pendingFiles.length === 0) return;
+      if (!pendingFiles || pendingFiles.length === 0) {
+        return;
+      }
 
       const assignment = determineSlotAssignment(pendingFiles, !!baseItem, !!overlayItem);
+      logger.info(
+        'SHARE-INGEST',
+        `Slot Assignment computed: base=${assignment.baseFile ? assignment.baseFile.name : 'none'}, overlay=${assignment.overlayFile ? assignment.overlayFile.name : 'none'}`
+      );
 
       if (assignment.baseFile) {
         revokeImageItem(baseItem);
         baseItem = await fileToImageItem(assignment.baseFile);
+        logger.info(
+          'SHARE-INGEST',
+          `Loaded base photo: ${baseItem.name} (${baseItem.width}×${baseItem.height})`
+        );
       }
 
       if (assignment.overlayFile) {
         revokeImageItem(overlayItem);
         overlayItem = await fileToImageItem(assignment.overlayFile);
         resetOverlayTransform();
+        logger.info(
+          'SHARE-INGEST',
+          `Loaded overlay graphic: ${overlayItem.name} (${overlayItem.width}×${overlayItem.height})`
+        );
       }
 
       syncSession();
@@ -151,9 +187,11 @@
         showToast('Imported base photo from share target!', 'success');
       }
     } catch (err) {
+      logger.error('SHARE-INGEST', `Failed to ingest share: ${err}`);
       console.error('Failed to ingest share:', err);
       showToast('Could not process shared image.', 'error');
     } finally {
+      isIngestingShare = false;
       if (typeof window !== 'undefined' && window.location.search.includes('incoming_share')) {
         window.history.replaceState({}, '', '/');
       }
@@ -162,8 +200,14 @@
 
   function handleVisibilityChange() {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      checkAndIngestPendingShares();
+      logger.info('LIFECYCLE', 'App resumed (visibility: visible)');
+      checkAndIngestPendingShares('visibilitychange');
     }
+  }
+
+  function handleSimulatedShareEvent() {
+    logger.info('LIFECYCLE', 'Simulated share event received');
+    checkAndIngestPendingShares('simulator');
   }
 
   // Initialize PWA, Service Worker, and Ingestion on Mount
@@ -172,10 +216,12 @@
       isOnline = navigator.onLine;
       window.addEventListener('online', () => {
         isOnline = true;
+        logger.info('NETWORK', 'Online connection restored');
         showToast('App is online', 'info');
       });
       window.addEventListener('offline', () => {
         isOnline = false;
+        logger.warn('NETWORK', 'Running in offline mode');
         showToast('App is running in offline mode', 'warning');
       });
 
@@ -184,13 +230,16 @@
         e.preventDefault();
         deferredInstallPrompt = e as BeforeInstallPromptEvent;
         canInstall = true;
+        logger.info('PWA', 'beforeinstallprompt triggered');
       });
 
       // Register service worker if available
       if ('serviceWorker' in navigator) {
         try {
           await navigator.serviceWorker.register('/service-worker.js');
+          logger.info('PWA', 'Service worker registered');
         } catch (err) {
+          logger.error('PWA', `Service worker registration failed: ${err}`);
           console.warn('Service worker registration failed:', err);
         }
       }
@@ -198,13 +247,12 @@
       // Clipboard paste listener
       window.addEventListener('paste', handleWindowPaste);
 
-      // App resume & visibility change listeners (for returning from share actions)
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      window.addEventListener('pageshow', handleVisibilityChange);
-      window.addEventListener('focus', handleVisibilityChange);
+      // Simulator event listener
+      window.addEventListener('incoming-share-simulated', handleSimulatedShareEvent);
 
-      // 1. Restore persisted session from IndexedDB first
+      // 1. Restore persisted session from IndexedDB first (guaranteed completion before share ingestion)
       try {
+        logger.info('LIFECYCLE', 'Starting initial IndexedDB session restore...');
         const savedSession = await loadSessionState();
         if (savedSession) {
           if (savedSession.baseItem) baseItem = savedSession.baseItem;
@@ -213,17 +261,30 @@
           if (savedSession.adjustments) adjustments = savedSession.adjustments;
         }
       } catch (e) {
+        logger.error('LIFECYCLE', `Could not restore previous session: ${e}`);
         console.warn('Could not restore previous session:', e);
+      } finally {
+        isSessionInitialized = true;
+        logger.info(
+          'LIFECYCLE',
+          `Session initialization complete (hasBase=${!!baseItem}, hasOverlay=${!!overlayItem})`
+        );
       }
 
-      // 2. Ingest Android Share Target files (if any are pending in SW cache or URL)
-      await checkAndIngestPendingShares();
+      // 2. Ingest Android Share Target files (now that baseItem/overlayItem are guaranteed loaded)
+      await checkAndIngestPendingShares('onMount');
+
+      // 3. Attach visibility and lifecycle listeners ONLY after initialization is complete
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('pageshow', handleVisibilityChange);
+      window.addEventListener('focus', handleVisibilityChange);
     }
   });
 
   onDestroy(() => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('paste', handleWindowPaste);
+      window.removeEventListener('incoming-share-simulated', handleSimulatedShareEvent);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pageshow', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
@@ -433,6 +494,7 @@
 <div class="h-dvh max-h-dvh w-full bg-[#09090b] text-zinc-100 flex flex-col overflow-hidden">
   <ToastContainer {toasts} onDismiss={dismissToast} />
   <HelpModal isOpen={isHelpOpen} onClose={() => (isHelpOpen = false)} />
+  <DiagnosticsModal isOpen={isDiagnosticsOpen} onClose={() => (isDiagnosticsOpen = false)} />
 
   <!-- DESKTOP STUDIO VIEW (lg+) -->
   <div class="hidden lg:flex flex-col h-screen overflow-hidden">
@@ -441,6 +503,7 @@
       {canInstall}
       onInstall={handleInstallPwa}
       onOpenHelp={() => (isHelpOpen = true)}
+      onOpenDiagnostics={() => (isDiagnosticsOpen = true)}
     />
 
     <div class="flex-1 flex min-h-0 overflow-hidden">
@@ -535,6 +598,7 @@
               {canInstall}
               onInstall={handleInstallPwa}
               onOpenHelp={() => (isHelpOpen = true)}
+              onOpenDiagnostics={() => (isDiagnosticsOpen = true)}
             />
           </div>
         </div>
@@ -598,6 +662,7 @@
             {canInstall}
             onInstall={handleInstallPwa}
             onOpenHelp={() => (isHelpOpen = true)}
+            onOpenDiagnostics={() => (isDiagnosticsOpen = true)}
           />
         </div>
 

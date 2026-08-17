@@ -1,4 +1,5 @@
 import { getMimeTypeFromName, isTransparentImage } from './image-loader';
+import { logger } from './logger';
 import type { ImageItem } from '../types';
 
 export interface PendingSharesResult {
@@ -72,16 +73,23 @@ export function determineSlotAssignment(
  * Checks Service Worker Cache for incoming shared files from Android Web Share Target
  */
 export async function retrievePendingSharedFiles(): Promise<File[] | null> {
-  if (typeof window === 'undefined' || !('caches' in window)) return null;
+  if (typeof window === 'undefined' || !('caches' in window)) {
+    logger.debug('SHARE-CACHE', 'caches API not available.');
+    return null;
+  }
 
   try {
     const cache = await caches.open('incoming-shares');
     const metaResponse = await cache.match('/shared-meta');
-    if (!metaResponse) return null;
+    if (!metaResponse) {
+      return null;
+    }
 
     const meta = await metaResponse.json();
     const count: number = meta.count || 0;
-    if (count === 0) return null;
+    if (count === 0) {
+      return null;
+    }
 
     const files: File[] = [];
 
@@ -102,11 +110,132 @@ export async function retrievePendingSharedFiles(): Promise<File[] | null> {
     const keys = await cache.keys();
     await Promise.all(keys.map((k) => cache.delete(k)));
 
+    logger.info(
+      'SHARE-CACHE',
+      `Retrieved ${files.length} shared file(s): ${files.map((f) => `"${f.name}" (${f.type})`).join(', ')}`
+    );
+
     return files.length > 0 ? files : null;
   } catch (err) {
+    logger.error('SHARE-CACHE', `Failed to retrieve shared files: ${err}`);
     console.warn('Failed to retrieve shared files from cache:', err);
     return null;
   }
+}
+
+/**
+ * Desktop development simulation helper:
+ * Simulates an Android OS Share Target POST by depositing files into the CacheStorage
+ * and dispatching a custom event / query flag.
+ */
+export async function simulateIncomingShare(files: File[]): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window)) {
+    throw new Error('CacheStorage not available in this browser');
+  }
+
+  const cache = await caches.open('incoming-shares');
+  const existingKeys = await cache.keys();
+  await Promise.all(existingKeys.map((k) => cache.delete(k)));
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const headers = new Headers();
+    headers.set('content-type', file.type || getMimeTypeFromName(file.name));
+    headers.set('x-file-name', encodeURIComponent(file.name));
+    await cache.put(`/shared-file-${i}`, new Response(file, { headers }));
+  }
+
+  await cache.put(
+    '/shared-meta',
+    new Response(JSON.stringify({ count: files.length, timestamp: Date.now() }), {
+      headers: { 'content-type': 'application/json' }
+    })
+  );
+
+  logger.info(
+    'SIMULATION',
+    `Simulated incoming share with ${files.length} file(s): ${files.map((f) => f.name).join(', ')}`
+  );
+
+  // Notify window
+  window.dispatchEvent(new CustomEvent('incoming-share-simulated'));
+}
+
+/**
+ * Creates a synthetic mock scenic JPEG photo
+ */
+export function createMockPhotoFile(name = 'mock_scenic_ride.jpg'): File {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = 800;
+  const ctx = canvas.getContext('2d')!;
+
+  // Background sunset gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, 800);
+  grad.addColorStop(0, '#0284c7');
+  grad.addColorStop(0.5, '#f97316');
+  grad.addColorStop(1, '#1e293b');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1200, 800);
+
+  // Mountains
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.moveTo(0, 800);
+  ctx.lineTo(300, 450);
+  ctx.lineTo(600, 600);
+  ctx.lineTo(950, 380);
+  ctx.lineTo(1200, 800);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 36px sans-serif';
+  ctx.fillText('SIMULATED BASE PHOTO', 40, 80);
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  const bin = atob(dataUrl.split(',')[1]);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+
+  return new File([arr], name, { type: 'image/jpeg' });
+}
+
+/**
+ * Creates a synthetic mock Strava transparent overlay PNG
+ */
+export function createMockOverlayFile(name = 'mock_strava_overlay.png'): File {
+  const canvas = document.createElement('canvas');
+  canvas.width = 800;
+  canvas.height = 600;
+  const ctx = canvas.getContext('2d')!;
+
+  // Transparent canvas with badge
+  ctx.clearRect(0, 0, 800, 600);
+
+  // Strava Orange Stats Badge
+  ctx.fillStyle = '#fc4c02';
+  ctx.beginPath();
+  ctx.roundRect(40, 400, 720, 150, 24);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 44px sans-serif';
+  ctx.fillText('42.8 km  •  1:32:15  •  680 m', 80, 490);
+
+  // Elevation route polyline
+  ctx.strokeStyle = '#fc4c02';
+  ctx.lineWidth = 14;
+  ctx.beginPath();
+  ctx.moveTo(80, 320);
+  ctx.bezierCurveTo(240, 150, 480, 380, 720, 180);
+  ctx.stroke();
+
+  const dataUrl = canvas.toDataURL('image/png');
+  const bin = atob(dataUrl.split(',')[1]);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+
+  return new File([arr], name, { type: 'image/png' });
 }
 
 export async function shareOrDownloadBlob(

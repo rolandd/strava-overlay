@@ -1,18 +1,20 @@
 <script lang="ts">
-  import { Flame, Download, HelpCircle, Wifi, WifiOff } from '@lucide/svelte';
+  import { Flame, Download, HelpCircle, Wifi, WifiOff, Activity } from '@lucide/svelte';
 
   let {
     isOnline = true,
     canInstall = false,
     isCompact = false,
     onInstall = () => {},
-    onOpenHelp = () => {}
+    onOpenHelp = () => {},
+    onOpenDiagnostics = () => {}
   }: {
     isOnline?: boolean;
     canInstall?: boolean;
     isCompact?: boolean;
     onInstall?: () => void;
     onOpenHelp?: () => void;
+    onOpenDiagnostics?: () => void;
   } = $props();
 </script>
 
@@ -40,6 +42,15 @@
           <span>Install</span>
         </button>
       {/if}
+
+      <button
+        onclick={onOpenDiagnostics}
+        class="p-1.5 rounded-lg bg-[#1a1a22] hover:bg-[#252530] text-zinc-400 hover:text-orange-400 border border-[#27272f] transition cursor-pointer"
+        title="Diagnostics & Log Viewer"
+        aria-label="Diagnostics"
+      >
+        <Activity class="w-3.5 h-3.5" />
+      </button>
 
       <button
         onclick={onOpenHelp}
@@ -108,6 +119,16 @@
           <span>Install App</span>
         </button>
       {/if}
+
+      <!-- Diagnostics / Test Simulator Button -->
+      <button
+        onclick={onOpenDiagnostics}
+        class="p-2 rounded-lg bg-[#1a1a22] hover:bg-[#252530] text-zinc-400 hover:text-orange-400 border border-[#27272f] transition cursor-pointer"
+        title="Diagnostics & Share Simulator"
+        aria-label="Diagnostics"
+      >
+        <Activity class="w-4 h-4" />
+      </button>
 
       <!-- Help / Guide Button -->
       <button
