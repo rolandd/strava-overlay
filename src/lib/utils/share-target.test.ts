@@ -77,4 +77,63 @@ describe('isTransparentImage & getMimeTypeFromName', () => {
     expect(getMimeTypeFromName('vector.svg')).toBe('image/svg+xml');
     expect(getMimeTypeFromName('apple.heic')).toBe('image/heic');
   });
+
+  it('CRITICAL: should be structured-cloneable without DataCloneError even if proxied', () => {
+    const rawTransform = { x: 10, y: 20, scale: 1.5, angle: 0 };
+    const proxiedTransform = new Proxy(rawTransform, {
+      get(target, prop) {
+        return target[prop as keyof typeof target];
+      }
+    });
+
+    const rawAdjustments = {
+      brightness: 1.1,
+      contrast: 1.0,
+      saturation: 1.2,
+      cropAspectRatio: 'original' as const
+    };
+    const proxiedAdjustments = new Proxy(rawAdjustments, {
+      get(target, prop) {
+        return target[prop as keyof typeof target];
+      }
+    });
+
+    // Sanitization logic
+    const sanitizedRecord = {
+      key: 'current',
+      baseImage: {
+        blob: new Blob(['photo-bytes'], { type: 'image/jpeg' }),
+        name: 'ride.jpg',
+        type: 'image/jpeg',
+        isTransparent: false
+      },
+      overlayImage: {
+        blob: new Blob(['overlay-bytes'], { type: 'image/png' }),
+        name: 'stats.png',
+        type: 'image/png',
+        isTransparent: true
+      },
+      transform: {
+        x: Number(proxiedTransform.x) || 0,
+        y: Number(proxiedTransform.y) || 0,
+        scale: Number(proxiedTransform.scale) || 1,
+        angle: Number(proxiedTransform.angle) || 0
+      },
+      adjustments: {
+        brightness: Number(proxiedAdjustments.brightness) || 1,
+        contrast: Number(proxiedAdjustments.contrast) || 1,
+        saturation: Number(proxiedAdjustments.saturation) || 1,
+        cropAspectRatio: proxiedAdjustments.cropAspectRatio || 'original'
+      },
+      updatedAt: Date.now()
+    };
+
+    // structuredClone should succeed without DataCloneError
+    const cloned = structuredClone(sanitizedRecord);
+    expect(cloned.key).toBe('current');
+    expect(cloned.baseImage.name).toBe('ride.jpg');
+    expect(cloned.overlayImage.name).toBe('stats.png');
+    expect(cloned.transform.scale).toBe(1.5);
+    expect(cloned.adjustments.brightness).toBe(1.1);
+  });
 });

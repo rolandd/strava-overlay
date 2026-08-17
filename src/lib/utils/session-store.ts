@@ -49,16 +49,39 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 async function extractBlobFromItem(item: ImageItem): Promise<Blob | null> {
-  if (item.file) return item.file;
-  if (item.url) {
-    try {
+  try {
+    if (item.file) {
+      // Unproxy and extract pure native Blob
+      return item.file.slice(0, item.file.size, item.file.type || getMimeTypeFromName(item.name));
+    }
+    if (item.url) {
       const res = await fetch(item.url);
       return await res.blob();
-    } catch {
-      return null;
     }
+  } catch (err) {
+    logger.error('IDB-EXTRACT', `Failed to extract blob from item: ${err}`);
   }
   return null;
+}
+
+function sanitizeTransform(t?: OverlayTransform): OverlayTransform | undefined {
+  if (!t) return undefined;
+  return {
+    x: Number(t.x) || 0,
+    y: Number(t.y) || 0,
+    scale: Number(t.scale) || 1,
+    angle: Number(t.angle) || 0
+  };
+}
+
+function sanitizeAdjustments(a?: BaseImageAdjustments): BaseImageAdjustments | undefined {
+  if (!a) return undefined;
+  return {
+    brightness: Number(a.brightness) || 1,
+    contrast: Number(a.contrast) || 1,
+    saturation: Number(a.saturation) || 1,
+    cropAspectRatio: a.cropAspectRatio || 'original'
+  };
 }
 
 let pendingSavePromise: Promise<void> = Promise.resolve();
@@ -105,10 +128,11 @@ async function executeSaveSessionState(params: {
         if (blob) {
           baseRecord = {
             blob,
-            name: params.baseItem.name,
-            type:
-              params.baseItem.file?.type || blob.type || getMimeTypeFromName(params.baseItem.name),
-            isTransparent: !!params.baseItem.isTransparent
+            name: String(params.baseItem.name || 'base_photo.jpg'),
+            type: String(
+              params.baseItem.file?.type || blob.type || getMimeTypeFromName(params.baseItem.name)
+            ),
+            isTransparent: Boolean(params.baseItem.isTransparent)
           };
         }
       } else {
@@ -123,12 +147,13 @@ async function executeSaveSessionState(params: {
         if (blob) {
           overlayRecord = {
             blob,
-            name: params.overlayItem.name,
-            type:
+            name: String(params.overlayItem.name || 'overlay.png'),
+            type: String(
               params.overlayItem.file?.type ||
-              blob.type ||
-              getMimeTypeFromName(params.overlayItem.name),
-            isTransparent: !!params.overlayItem.isTransparent
+                blob.type ||
+                getMimeTypeFromName(params.overlayItem.name)
+            ),
+            isTransparent: Boolean(params.overlayItem.isTransparent)
           };
         }
       } else {
@@ -136,12 +161,17 @@ async function executeSaveSessionState(params: {
       }
     }
 
+    const cleanTransform =
+      sanitizeTransform(params.transform) ?? sanitizeTransform(existing?.transform);
+    const cleanAdjustments =
+      sanitizeAdjustments(params.adjustments) ?? sanitizeAdjustments(existing?.adjustments);
+
     const record: PersistedSessionRecord = {
       key: 'current',
       baseImage: baseRecord,
       overlayImage: overlayRecord,
-      transform: params.transform ?? existing?.transform,
-      adjustments: params.adjustments ?? existing?.adjustments,
+      transform: cleanTransform,
+      adjustments: cleanAdjustments,
       updatedAt: Date.now()
     };
 
