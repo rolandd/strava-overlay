@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ImagePlus, Hand, RotateCw } from '@lucide/svelte';
   import type { BaseImageAdjustments, ImageItem, OverlayTransform } from '../types';
-  import { gestureHandler } from '../utils/gestures';
+  import { gestureHandler, isAngleNearCardinal } from '../utils/gestures';
   import type { ViewportDimensions } from '../utils/presets';
 
   let {
@@ -225,10 +225,15 @@
             />
 
             {#if isInteracting}
+              {@const isSnapped = isAngleNearCardinal(transform.angle)}
               <div
-                class="absolute -top-6 left-1/2 -translate-x-1/2 bg-black/85 text-white text-[10px] font-mono px-2 py-0.5 rounded-full border border-zinc-700 whitespace-nowrap pointer-events-none shadow-md"
+                class="absolute -top-6 left-1/2 -translate-x-1/2 bg-black/85 text-[10px] font-mono px-2.5 py-0.5 rounded-full border whitespace-nowrap pointer-events-none shadow-md transition-colors {isSnapped
+                  ? 'border-[#fc4c02] text-[#fc4c02] font-bold shadow-[0_0_12px_rgba(252,76,2,0.45)]'
+                  : 'border-zinc-700 text-white'}"
               >
-                {Math.round(transform.scale * 100)}% • {Math.round(transform.angle)}°
+                {Math.round(transform.scale * 100)}% • {Math.round(transform.angle)}°{isSnapped
+                  ? ' ⌖'
+                  : ''}
               </div>
             {/if}
           </div>

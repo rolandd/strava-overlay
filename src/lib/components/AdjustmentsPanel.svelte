@@ -19,6 +19,7 @@
     SnapPresetId
   } from '../types';
   import PresetsBar from './PresetsBar.svelte';
+  import { isAngleNearCardinal, getNearestCardinalAngle } from '../utils/gestures';
 
   let {
     transform,
@@ -49,6 +50,7 @@
   } = $props();
 
   let activeTab = $state<'transform' | 'presets' | 'base' | 'export'>('transform');
+  let isAngleSnapped = $derived(isAngleNearCardinal(transform.angle));
 
   function resetBaseAdjustments() {
     onUpdateAdjustments({
@@ -185,8 +187,12 @@
             <span class="font-medium text-zinc-300 flex items-center gap-1.5">
               <RotateCw class="w-3.5 h-3.5 text-[#fc4c02]" /> Rotation
             </span>
-            <span class="font-mono text-zinc-400 text-[11px]">
-              {Math.round(transform.angle)}°
+            <span
+              class="font-mono text-[11px] {isAngleSnapped
+                ? 'text-[#fc4c02] font-semibold'
+                : 'text-zinc-400'}"
+            >
+              {Math.round(transform.angle)}°{isAngleSnapped ? ' (Snapped)' : ''}
             </span>
           </div>
           <input
@@ -196,28 +202,48 @@
             step="1"
             value={transform.angle}
             disabled={!hasOverlay}
-            oninput={(e) => onUpdateTransform({ angle: parseFloat(e.currentTarget.value) })}
+            oninput={(e) => {
+              const val = parseFloat(e.currentTarget.value);
+              const nearest = getNearestCardinalAngle(val);
+              if (Math.abs(val - nearest) <= 2) {
+                onUpdateTransform({ angle: nearest });
+              } else {
+                onUpdateTransform({ angle: val });
+              }
+            }}
             class="w-full cursor-pointer disabled:opacity-40"
           />
           <div class="flex items-center justify-between gap-1 text-[10px]">
             <button
               onclick={() => setRotation(-90)}
               disabled={!hasOverlay}
-              class="px-2.5 py-1 rounded bg-[#1e1e28] hover:bg-[#282836] disabled:opacity-40 text-zinc-300 cursor-pointer"
+              class="px-2.5 py-1 rounded bg-[#1e1e28] hover:bg-[#282836] disabled:opacity-40 cursor-pointer transition-colors {Math.round(
+                transform.angle
+              ) === -90
+                ? 'bg-[#fc4c02]/20 text-[#fc4c02] border border-[#fc4c02]/40 font-semibold'
+                : 'text-zinc-300'}"
             >
               -90°
             </button>
             <button
               onclick={() => setRotation(0)}
               disabled={!hasOverlay}
-              class="px-2.5 py-1 rounded bg-[#1e1e28] hover:bg-[#282836] disabled:opacity-40 text-zinc-300 cursor-pointer"
+              class="px-2.5 py-1 rounded bg-[#1e1e28] hover:bg-[#282836] disabled:opacity-40 cursor-pointer transition-colors {Math.round(
+                transform.angle
+              ) === 0
+                ? 'bg-[#fc4c02]/20 text-[#fc4c02] border border-[#fc4c02]/40 font-semibold'
+                : 'text-zinc-300'}"
             >
               0° Level
             </button>
             <button
               onclick={() => setRotation(90)}
               disabled={!hasOverlay}
-              class="px-2.5 py-1 rounded bg-[#1e1e28] hover:bg-[#282836] disabled:opacity-40 text-zinc-300 cursor-pointer"
+              class="px-2.5 py-1 rounded bg-[#1e1e28] hover:bg-[#282836] disabled:opacity-40 cursor-pointer transition-colors {Math.round(
+                transform.angle
+              ) === 90
+                ? 'bg-[#fc4c02]/20 text-[#fc4c02] border border-[#fc4c02]/40 font-semibold'
+                : 'text-zinc-300'}"
             >
               +90°
             </button>
