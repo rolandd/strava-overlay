@@ -46,7 +46,7 @@
 <input
   bind:this={baseInput}
   type="file"
-  accept="image/*"
+  accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.avif"
   onchange={handleBaseChange}
   class="hidden"
   id="base-file-input"
@@ -54,7 +54,7 @@
 <input
   bind:this={overlayInput}
   type="file"
-  accept="image/*"
+  accept="image/*,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,.avif"
   onchange={handleOverlayChange}
   class="hidden"
   id="overlay-file-input"
@@ -241,64 +241,70 @@
   </div>
 {:else}
   <!-- Default Cards Mode (Onboarding / Missing Images) -->
-  <div class="w-full max-w-4xl mx-auto px-4 py-2">
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
+  <div class="w-full max-w-4xl mx-auto px-3 sm:px-4 py-1 sm:py-2">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 relative">
       <!-- Slot 1: Base Photo -->
       <div
-        class="relative flex items-center justify-between p-3.5 rounded-2xl border transition-all {baseItem
+        class="relative flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border transition-all {baseItem
           ? 'bg-[#15151c] border-[#27272f]'
           : 'bg-[#121216]/80 border-dashed border-[#2f2f3a] hover:border-[#fc4c02]/50 hover:bg-[#15151c]'}"
       >
         {#if baseItem}
-          <div class="flex items-center gap-3 overflow-hidden">
+          <div class="flex items-center gap-2.5 sm:gap-3 overflow-hidden min-w-0 flex-1">
             <div
-              class="w-12 h-12 rounded-xl bg-black overflow-hidden shrink-0 border border-[#27272f] flex items-center justify-center"
+              class="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-black overflow-hidden shrink-0 border border-[#27272f] flex items-center justify-center"
             >
               <img src={baseItem.url} alt="Base thumbnail" class="w-full h-full object-cover" />
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5">
                 <span class="text-xs font-semibold text-white truncate">{baseItem.name}</span>
-                <span class="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300 font-mono">
+                <span
+                  class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300 font-mono shrink-0"
+                >
                   {baseItem.width}×{baseItem.height}
                 </span>
               </div>
-              <p class="text-[11px] text-zinc-400 font-medium mt-0.5">1. Base Photo</p>
+              <p class="text-[10px] sm:text-[11px] text-zinc-400 font-medium mt-0.5">
+                1. Base Photo
+              </p>
             </div>
           </div>
 
-          <div class="flex items-center gap-1.5 shrink-0 ml-2">
+          <div class="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-1.5">
             <button
               onclick={() => baseInput?.click()}
-              class="px-2.5 py-1.5 rounded-lg bg-[#20202a] hover:bg-[#2a2a38] text-xs font-medium text-zinc-200 transition-colors cursor-pointer"
+              class="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg bg-[#20202a] hover:bg-[#2a2a38] text-[11px] sm:text-xs font-medium text-zinc-200 transition-colors cursor-pointer"
             >
               Replace
             </button>
             <button
               onclick={onRemoveBase}
-              class="p-1.5 rounded-lg bg-[#20202a] hover:bg-rose-950/60 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
+              class="p-1 sm:p-1.5 rounded-lg bg-[#20202a] hover:bg-rose-950/60 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
               title="Remove Base Photo"
             >
-              <X class="w-4 h-4" />
+              <X class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           </div>
         {:else}
           <button
             onclick={() => baseInput?.click()}
-            class="w-full flex items-center justify-center gap-3 py-3 text-left cursor-pointer group"
+            class="w-full flex items-center justify-center gap-2.5 sm:gap-3 py-2 sm:py-3 text-left cursor-pointer group"
           >
             <div
-              class="w-11 h-11 rounded-xl bg-[#1a1a22] border border-[#27272f] flex items-center justify-center text-zinc-400 group-hover:text-[#fc4c02] group-hover:border-[#fc4c02]/40 transition-colors"
+              class="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-[#1a1a22] border border-[#27272f] flex items-center justify-center text-zinc-400 group-hover:text-[#fc4c02] group-hover:border-[#fc4c02]/40 transition-colors shrink-0"
             >
-              <ImageIcon class="w-5 h-5" />
+              <ImageIcon class="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
+            <div class="min-w-0 flex-1">
               <div
                 class="text-xs font-semibold text-zinc-200 group-hover:text-white transition-colors"
               >
                 1. Select Base Photo
               </div>
-              <p class="text-[11px] text-zinc-400">Scenic ride or activity photo</p>
+              <p class="text-[10px] sm:text-[11px] text-zinc-400 truncate">
+                Scenic ride or activity photo
+              </p>
             </div>
           </button>
         {/if}
@@ -306,14 +312,14 @@
 
       <!-- Slot 2: Overlay Graphic -->
       <div
-        class="relative flex items-center justify-between p-3.5 rounded-2xl border transition-all {overlayItem
+        class="relative flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border transition-all {overlayItem
           ? 'bg-[#15151c] border-[#27272f]'
           : 'bg-[#121216]/80 border-dashed border-[#2f2f3a] hover:border-[#fc4c02]/50 hover:bg-[#15151c]'}"
       >
         {#if overlayItem}
-          <div class="flex items-center gap-3 overflow-hidden">
+          <div class="flex items-center gap-2.5 sm:gap-3 overflow-hidden min-w-0 flex-1">
             <div
-              class="w-12 h-12 rounded-xl bg-black/60 overflow-hidden shrink-0 border border-[#27272f] flex items-center justify-center p-1 bg-[radial-gradient(#27272f_1px,transparent_1px)] [background-size:6px_6px]"
+              class="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-black/60 overflow-hidden shrink-0 border border-[#27272f] flex items-center justify-center p-1 bg-[radial-gradient(#27272f_1px,transparent_1px)] [background-size:6px_6px]"
             >
               <img
                 src={overlayItem.url}
@@ -324,46 +330,52 @@
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5">
                 <span class="text-xs font-semibold text-white truncate">{overlayItem.name}</span>
-                <span class="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300 font-mono">
+                <span
+                  class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300 font-mono shrink-0"
+                >
                   {overlayItem.width}×{overlayItem.height}
                 </span>
               </div>
-              <p class="text-[11px] text-zinc-400 font-medium mt-0.5">2. Strava Overlay PNG</p>
+              <p class="text-[10px] sm:text-[11px] text-zinc-400 font-medium mt-0.5">
+                2. Strava Overlay PNG
+              </p>
             </div>
           </div>
 
-          <div class="flex items-center gap-1.5 shrink-0 ml-2">
+          <div class="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-1.5">
             <button
               onclick={() => overlayInput?.click()}
-              class="px-2.5 py-1.5 rounded-lg bg-[#20202a] hover:bg-[#2a2a38] text-xs font-medium text-zinc-200 transition-colors cursor-pointer"
+              class="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg bg-[#20202a] hover:bg-[#2a2a38] text-[11px] sm:text-xs font-medium text-zinc-200 transition-colors cursor-pointer"
             >
               Replace
             </button>
             <button
               onclick={onRemoveOverlay}
-              class="p-1.5 rounded-lg bg-[#20202a] hover:bg-rose-950/60 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
+              class="p-1 sm:p-1.5 rounded-lg bg-[#20202a] hover:bg-rose-950/60 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
               title="Remove Overlay Graphic"
             >
-              <X class="w-4 h-4" />
+              <X class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           </div>
         {:else}
           <button
             onclick={() => overlayInput?.click()}
-            class="w-full flex items-center justify-center gap-3 py-3 text-left cursor-pointer group"
+            class="w-full flex items-center justify-center gap-2.5 sm:gap-3 py-2 sm:py-3 text-left cursor-pointer group"
           >
             <div
-              class="w-11 h-11 rounded-xl bg-[#1a1a22] border border-[#27272f] flex items-center justify-center text-zinc-400 group-hover:text-[#fc4c02] group-hover:border-[#fc4c02]/40 transition-colors"
+              class="w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-[#1a1a22] border border-[#27272f] flex items-center justify-center text-zinc-400 group-hover:text-[#fc4c02] group-hover:border-[#fc4c02]/40 transition-colors shrink-0"
             >
-              <Layers class="w-5 h-5" />
+              <Layers class="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
+            <div class="min-w-0 flex-1">
               <div
                 class="text-xs font-semibold text-zinc-200 group-hover:text-white transition-colors"
               >
                 2. Select Overlay Graphic
               </div>
-              <p class="text-[11px] text-zinc-400">Transparent stats badge or elevation map</p>
+              <p class="text-[10px] sm:text-[11px] text-zinc-400 truncate">
+                Transparent stats badge or map
+              </p>
             </div>
           </button>
         {/if}

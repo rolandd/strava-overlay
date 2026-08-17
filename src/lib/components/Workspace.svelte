@@ -10,6 +10,7 @@
     transform,
     adjustments,
     isRotatedView = false,
+    fullBleed = false,
     onToggleRotatedView = () => {},
     onUpdateTransform = () => {},
     onDropFiles = () => {},
@@ -20,6 +21,7 @@
     transform: OverlayTransform;
     adjustments: BaseImageAdjustments;
     isRotatedView?: boolean;
+    fullBleed?: boolean;
     onToggleRotatedView?: () => void;
     onUpdateTransform?: (t: Partial<OverlayTransform>) => void;
     onDropFiles?: (files: File[]) => void;
@@ -125,12 +127,14 @@
 </script>
 
 <div
-  class="w-full h-full flex flex-col items-center justify-center p-1 sm:p-4 select-none min-h-0 relative overflow-hidden"
+  class="w-full h-full flex flex-col items-center justify-center select-none min-h-0 relative overflow-hidden {fullBleed
+    ? 'p-0'
+    : 'p-1 sm:p-4'}"
 >
   <!-- Virtual 90° Rotatable Stage Container -->
   <div
     class="relative flex items-center justify-center transition-transform duration-300 ease-out {isRotatedView
-      ? 'rotate-90 scale-[0.95]'
+      ? 'rotate-90 scale-[0.98]'
       : ''}"
     style="width: 100%; height: 100%; max-width: 100%; max-height: 100%;"
   >
@@ -143,10 +147,12 @@
       ondrop={handleDrop}
       role="region"
       aria-label="Image compositing workspace"
-      style="aspect-ratio: {displayAspectRatio}; max-height: calc(100% - 0.5rem);"
-      class="relative w-auto h-auto max-w-full max-h-full mx-auto bg-black rounded-2xl overflow-hidden shadow-2xl border transition-all flex items-center justify-center {isDragOver
-        ? 'border-[#fc4c02] ring-4 ring-[#fc4c02]/30 scale-[1.01]'
-        : 'border-[#27272f]'}"
+      style="aspect-ratio: {displayAspectRatio}; max-height: 100%; max-width: 100%;"
+      class="relative w-auto h-auto max-w-full max-h-full mx-auto bg-black overflow-hidden flex items-center justify-center transition-all {fullBleed
+        ? 'rounded-none sm:rounded-2xl border-0 sm:border sm:border-[#27272f] shadow-none sm:shadow-2xl'
+        : 'rounded-2xl border border-[#27272f] shadow-2xl'} {isDragOver
+        ? 'ring-4 ring-[#fc4c02]/40 scale-[1.01]'
+        : ''}"
     >
       <!-- 1. Drop Zone Overlay (when dragging files over) -->
       {#if isDragOver}
@@ -170,12 +176,12 @@
       {:else}
         <!-- Empty State -->
         <div
-          class="w-full h-full min-h-[260px] sm:min-h-[340px] flex flex-col items-center justify-center p-8 text-center bg-[#101014]"
+          class="w-full h-full min-h-[220px] sm:min-h-[340px] flex flex-col items-center justify-center p-6 text-center bg-[#101014]"
         >
           <div
-            class="w-16 h-16 rounded-2xl bg-[#1a1a22] border border-[#27272f] flex items-center justify-center text-zinc-400 mb-4 shadow-inner"
+            class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-[#1a1a22] border border-[#27272f] flex items-center justify-center text-zinc-400 mb-3 sm:mb-4 shadow-inner"
           >
-            <ImagePlus class="w-8 h-8 text-[#fc4c02]" />
+            <ImagePlus class="w-7 h-7 sm:w-8 sm:h-8 text-[#fc4c02]" />
           </div>
           <h3 class="text-sm font-semibold text-zinc-200">No Photo Loaded</h3>
           <p class="text-xs text-zinc-400 max-w-xs mt-1 leading-relaxed">
@@ -228,7 +234,7 @@
           </div>
         </div>
       {:else if baseItem && !overlayItem}
-        <div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+        <div class="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
           <div
             class="bg-black/80 backdrop-blur-xs border border-zinc-700/60 px-4 py-2.5 rounded-xl text-center shadow-lg"
           >
@@ -241,7 +247,9 @@
       <!-- Gesture Hint Badge -->
       {#if baseItem && overlayItem}
         <div
-          class="absolute bottom-2 left-2 pointer-events-none z-30 opacity-60 hover:opacity-100 transition-opacity"
+          class="absolute pointer-events-none z-30 opacity-60 hover:opacity-100 transition-opacity {fullBleed
+            ? 'bottom-20 left-3'
+            : 'bottom-2 left-2'}"
         >
           <div
             class="bg-black/70 backdrop-blur-xs px-2 py-1 rounded-md text-[10px] text-zinc-300 border border-white/10 flex items-center gap-1.5"
@@ -256,7 +264,9 @@
 
   <!-- Floating Quick Rotate View Button for Landscape Photos on Mobile -->
   {#if baseItem && isLandscapePhoto}
-    <div class="absolute top-16 right-3 sm:top-4 sm:right-4 z-30">
+    <div
+      class="absolute z-30 {fullBleed ? 'top-14 right-3' : 'top-16 right-3 sm:top-4 sm:right-4'}"
+    >
       <button
         onclick={onToggleRotatedView}
         class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#121217]/90 hover:bg-[#1a1a22] text-zinc-200 hover:text-white border border-[#27272f] shadow-lg transition-all active:scale-95 cursor-pointer text-xs font-medium backdrop-blur-xs"

@@ -29,6 +29,7 @@
     downloadBlob,
     shareOrDownloadBlob
   } from '$lib/utils/share-target';
+  import { clearSessionState, loadSessionState, saveSessionState } from '$lib/utils/session-store';
 
   // Reactive Application State
   let baseItem = $state<ImageItem | null>(null);
@@ -94,6 +95,11 @@
     toasts = toasts.filter((t) => t.id !== id);
   }
 
+  // Persist session to IndexedDB whenever relevant states change
+  function syncSession() {
+    saveSessionState({ baseItem, overlayItem, transform, adjustments });
+  }
+
   // Adaptive Orientation Lock when in Standalone PWA
   $effect(() => {
     if (typeof window !== 'undefined' && 'screen' in window && 'orientation' in window.screen) {
@@ -149,7 +155,20 @@
       // Clipboard paste listener
       window.addEventListener('paste', handleWindowPaste);
 
-      // Ingest Android Share Target files if redirected with query
+      // 1. Restore persisted session from IndexedDB first
+      try {
+        const savedSession = await loadSessionState();
+        if (savedSession) {
+          if (savedSession.baseItem) baseItem = savedSession.baseItem;
+          if (savedSession.overlayItem) overlayItem = savedSession.overlayItem;
+          if (savedSession.transform) transform = savedSession.transform;
+          if (savedSession.adjustments) adjustments = savedSession.adjustments;
+        }
+      } catch (e) {
+        console.warn('Could not restore previous session:', e);
+      }
+
+      // 2. Ingest Android Share Target files if redirected with query
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.has('incoming_share')) {
         try {
@@ -162,7 +181,9 @@
             if (sharedResult.overlayItem) {
               revokeImageItem(overlayItem);
               overlayItem = sharedResult.overlayItem;
+              resetOverlayTransform();
             }
+            syncSession();
             showToast('Imported photo from system share target!', 'success');
           }
         } catch (err) {
@@ -212,15 +233,18 @@
           revokeImageItem(overlayItem);
           overlayItem = await fileToImageItem(f);
           resetOverlayTransform();
+          syncSession();
           showToast('Overlay graphic loaded', 'success');
         } else if (!baseItem) {
           revokeImageItem(baseItem);
           baseItem = await fileToImageItem(f);
+          syncSession();
           showToast('Base photo loaded', 'success');
         } else {
           revokeImageItem(overlayItem);
           overlayItem = await fileToImageItem(f);
           resetOverlayTransform();
+          syncSession();
           showToast('Overlay graphic loaded', 'success');
         }
       } else if (files.length >= 2) {
@@ -234,34 +258,42 @@
         baseItem = await fileToImageItem(nonTransparent);
         overlayItem = await fileToImageItem(overlayFile);
         resetOverlayTransform();
+        syncSession();
         showToast('Loaded base photo and overlay graphic', 'success');
       }
     } catch (err) {
       console.error('Error reading files:', err);
-      showToast('Failed to load selected image file.', 'error');
+      const msg = err instanceof Error ? err.message : 'Failed to load selected image file.';
+      showToast(msg, 'error');
     }
   }
 
   async function handleSelectBase(file: File) {
     try {
+      const newItem = await fileToImageItem(file);
       revokeImageItem(baseItem);
-      baseItem = await fileToImageItem(file);
+      baseItem = newItem;
+      syncSession();
       showToast(`Base photo loaded (${baseItem.width}×${baseItem.height})`, 'success');
     } catch (err) {
       console.error('Failed to load base photo:', err);
-      showToast('Failed to load base photo.', 'error');
+      const msg = err instanceof Error ? err.message : 'Failed to load base photo.';
+      showToast(msg, 'error');
     }
   }
 
   async function handleSelectOverlay(file: File) {
     try {
+      const newItem = await fileToImageItem(file);
       revokeImageItem(overlayItem);
-      overlayItem = await fileToImageItem(file);
+      overlayItem = newItem;
       resetOverlayTransform();
+      syncSession();
       showToast(`Overlay loaded (${overlayItem.width}×${overlayItem.height})`, 'success');
     } catch (err) {
       console.error('Failed to load overlay:', err);
-      showToast('Failed to load overlay image.', 'error');
+      const msg = err instanceof Error ? err.message : 'Failed to load overlay image.';
+      showToast(msg, 'error');
     }
   }
 
@@ -269,12 +301,14 @@
     revokeImageItem(baseItem);
     baseItem = null;
     isRotatedView = false;
+    syncSession();
   }
 
   function handleRemoveOverlay() {
     revokeImageItem(overlayItem);
     overlayItem = null;
     resetOverlayTransform();
+    syncSession();
   }
 
   function handleSwapSlots() {
@@ -283,11 +317,12 @@
       baseItem = overlayItem;
       overlayItem = temp;
       resetOverlayTransform();
+      syncSession();
       showToast('Swapped base photo and overlay slots', 'info');
     }
   }
 
-  function handleClearAll() {
+  async function handleClearAll() {
     revokeImageItem(baseItem);
     revokeImageItem(overlayItem);
     baseItem = null;
@@ -301,6 +336,7 @@
       saturation: 1.0,
       cropAspectRatio: 'original'
     };
+    await clearSessionState();
     if (typeof window !== 'undefined' && 'screen' in window && 'orientation' in window.screen) {
       const orientation = window.screen.orientation;
       if (typeof orientation.unlock === 'function') {
@@ -322,14 +358,17 @@
   function handleSelectPreset(presetId: SnapPresetId) {
     if (!overlayItem || !baseItem) return;
     transform = computePresetTransform(presetId, transform, viewportDims);
+    syncSession();
   }
 
   function updateTransform(newValues: Partial<OverlayTransform>) {
     transform = { ...transform, ...newValues };
+    syncSession();
   }
 
   function updateAdjustments(newValues: Partial<BaseImageAdjustments>) {
     adjustments = { ...adjustments, ...newValues };
+    syncSession();
   }
 
   function updateExportOptions(newValues: Partial<ExportOptions>) {
@@ -373,7 +412,7 @@
   }
 </script>
 
-<div class="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col">
+<div class="h-dvh max-h-dvh w-full bg-[#09090b] text-zinc-100 flex flex-col overflow-hidden">
   <ToastContainer {toasts} onDismiss={dismissToast} />
   <HelpModal isOpen={isHelpOpen} onClose={() => (isHelpOpen = false)} />
 
@@ -448,10 +487,12 @@
   </div>
 
   <!-- MOBILE VIEW (< lg) -->
-  <div class="lg:hidden flex-1 flex flex-col">
+  <div class="lg:hidden flex-1 h-full w-full overflow-hidden flex flex-col">
     {#if hasBoth}
-      <!-- MOBILE MODE B: Full-Bleed Immersive Studio -->
-      <div class="h-[100dvh] w-full overflow-hidden relative flex flex-col justify-between">
+      <!-- MOBILE MODE B: Full-Bleed Immersive Studio (Both images ready) -->
+      <div
+        class="h-dvh max-h-dvh w-full overflow-hidden relative flex flex-col justify-between bg-black"
+      >
         <!-- Floating Top Minimal HUD Capsule -->
         <div
           class="absolute top-0 inset-x-0 pt-safe px-3 py-2 z-30 flex items-center justify-between pointer-events-none"
@@ -480,9 +521,9 @@
           </div>
         </div>
 
-        <!-- Full-Screen Interactive Workspace Canvas -->
+        <!-- Full-Bleed Edge-to-Edge Workspace Canvas -->
         <main
-          class="flex-1 w-full h-full min-h-0 flex items-center justify-center p-1 sm:p-2 pt-14 pb-20"
+          class="flex-1 w-full h-full min-h-0 flex items-center justify-center p-0 relative overflow-hidden"
         >
           <Workspace
             {baseItem}
@@ -490,6 +531,7 @@
             {transform}
             {adjustments}
             {isRotatedView}
+            fullBleed={true}
             onToggleRotatedView={() => (isRotatedView = !isRotatedView)}
             onUpdateTransform={updateTransform}
             onDropFiles={processFilesList}
@@ -526,28 +568,39 @@
         />
       </div>
     {:else}
-      <!-- MOBILE MODE A: Ingestion Onboarding Mode (Missing one or both images) -->
-      <div class="min-h-screen flex flex-col justify-between">
-        <Header
-          {isOnline}
-          {canInstall}
-          onInstall={handleInstallPwa}
-          onOpenHelp={() => (isHelpOpen = true)}
-        />
-
-        <main class="flex-1 flex flex-col justify-center py-4 space-y-4">
-          <InputSlots
-            {baseItem}
-            {overlayItem}
-            variant="cards"
-            onSelectBase={handleSelectBase}
-            onSelectOverlay={handleSelectOverlay}
-            onRemoveBase={handleRemoveBase}
-            onRemoveOverlay={handleRemoveOverlay}
-            onSwapSlots={handleSwapSlots}
+      <!-- MOBILE MODE A: Ingestion Onboarding Mode (Strictly constrained to 100dvh) -->
+      <div
+        class="h-dvh max-h-dvh w-full flex flex-col justify-between overflow-hidden bg-[#09090b]"
+      >
+        <!-- Compact Header -->
+        <div class="shrink-0 pt-safe px-3 py-1">
+          <Header
+            isCompact={true}
+            {isOnline}
+            {canInstall}
+            onInstall={handleInstallPwa}
+            onOpenHelp={() => (isHelpOpen = true)}
           />
+        </div>
 
-          <div class="flex-1 flex items-center justify-center min-h-[280px]">
+        <!-- Middle Content Stage -->
+        <main class="flex-1 min-h-0 flex flex-col justify-between p-2 space-y-2 overflow-hidden">
+          <!-- Compact Layer Slots Cards -->
+          <div class="shrink-0">
+            <InputSlots
+              {baseItem}
+              {overlayItem}
+              variant="cards"
+              onSelectBase={handleSelectBase}
+              onSelectOverlay={handleSelectOverlay}
+              onRemoveBase={handleRemoveBase}
+              onRemoveOverlay={handleRemoveOverlay}
+              onSwapSlots={handleSwapSlots}
+            />
+          </div>
+
+          <!-- Adaptive Preview Area (never forces layout overflow) -->
+          <div class="flex-1 min-h-0 flex items-center justify-center p-1 overflow-hidden">
             <Workspace
               {baseItem}
               {overlayItem}
@@ -560,14 +613,17 @@
           </div>
         </main>
 
-        <ExportBar
-          {isRendering}
-          hasBothImages={hasBoth}
-          mode="inline"
-          onExport={() => handleExportComposite(false)}
-          onDownloadDirect={() => handleExportComposite(true)}
-          onClearAll={handleClearAll}
-        />
+        <!-- Docked Bottom Action Bar (always visible above safe area) -->
+        <div class="shrink-0 pb-safe">
+          <ExportBar
+            {isRendering}
+            hasBothImages={hasBoth}
+            mode="inline"
+            onExport={() => handleExportComposite(false)}
+            onDownloadDirect={() => handleExportComposite(true)}
+            onClearAll={handleClearAll}
+          />
+        </div>
       </div>
     {/if}
   </div>
